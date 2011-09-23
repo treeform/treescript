@@ -1,0 +1,59 @@
+(: call (js "function () {
+  var args = Array.prototype.slice.call(arguments);
+  first = args[0];
+  if (first.apply){
+    return first.apply(this, args.slice(1))
+  } else if (args.length == 2){
+    return first[args[1]]
+  } else if (args.length == 3){
+    var value = args[2]
+    first[args[1]] = value
+    return value
+  }
+}"))
+
+
+(: print (js "function () {
+  var args = Array.prototype.slice.call(arguments);
+  console.log.apply(console, args);
+}"))
+
+(: list (js "function () {
+  return Array.prototype.slice.call(arguments);
+}"))
+
+(: table (js "function () {
+  var args = Array.prototype.slice.call(arguments);
+  var table = {};
+  for(var i = 0; i < args.length; i += 2){
+    table[args[i]] = args[i+1];
+  }
+  return table;
+}"))
+
+; math fns
+(: + (js "function (a,b) {return a+b}"))
+
+
+(: make-adder (fn (m) (fn (n) (+ n m))))
+(: add10 (make-adder 10))
+(print (add10 6))
+
+
+;(print (list (+ 2 3) 4 5 6 8))
+;(print '(1 (2 foo "bar") (offer 3 4 3)))
+
+(: l (list 1 2 3))
+(print "list" l)
+(print (l 0))
+(print (l 1))
+(print (l 1 4))
+(print l)
+
+(: m (table "a" 1 "b" 2 "c" 3))
+(print m)
+(print (m "a"))
+(print (m "b"))
+(print (m "d" 4))
+(print m)
+
