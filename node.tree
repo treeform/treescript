@@ -6,7 +6,7 @@
   ; Every time someone connects, tell them hello and then close the connection.
   (socket.addListener "connect" (fn ()
     (console.log "Connection from " socket.remoteAddress)
-    (socket.end "Hello World\n"))))))
+    (socket.end (+ "Hello" "World" "\n")))))))
 
 ; Fire up the server bound to port 7000 on localhost
 (server.listen 7000 "localhost")
