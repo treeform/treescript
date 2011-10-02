@@ -1,0 +1,53 @@
+; tree scirpt is just a different skin to js
+
+; you still use same functions
+(console.log "world")
+; or you can call the function first
+(.log console "hello")
+
+
+; if statements are arc style
+; (if if-exp then-exp
+;     else-if-exp then-exp
+;     else-if-exp then-exp
+;     else-if-exp then-exp
+;     ...
+;     else-exp)
+(if (= 2 2) (console.log "hi there")
+    (= 3 (+ 1 (* 2 1))) (console.log "moo")
+    (console.log "fail"))
+
+; you create functions using fn keyword
+(fn (a) (+ a 1))
+
+; you can define and set a variable in the current scope
+(: a 3)
+
+; lets creates new lexical binding simmilar to functions
+(let (a 3 b 4 c 5)
+  (console.log "new scope")
+  (console.log a b c))
+
+; to create a list simply
+'(1 2 3 4)
+
+; to create a table simply
+'(a: 1 b: 2 c: 3)
+
+; there is map and each to zip through the list and table
+(map (fn (n) (+ n 1))
+     '(1 2 3 4))
+
+(each (fn (k v) (+ k v))
+      '(a: 1 b: 2 c: 3 d: 4))
+
+; you can mix tables and list when you call functions who's
+; list paramters like a table
+($.ajax url type: "POST" data: '(1 2 3))
+; to create this:
+; $.ajax(url,{"type":"POST","data":[1,2,3]});
+
+; because js does not have cons cells treescript does not either
+; you can use a two dementional list '(car cdr) if you want slowness
+; treescirpt does not have tail call optimzations yet
+; treescirpt does not do any cps transforms to make asnyc easy

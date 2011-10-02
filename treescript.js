@@ -14,7 +14,7 @@ var OPS = {
   'and':'&&', "or":'||', "not":"!"
 }
 
-var QUOTES_RE = /^['@!~#$]+$/;
+var QUOTES_RE = /^['@!~#]+$/;
 
 function json(a){
   return JSON.stringify(a);
@@ -22,8 +22,11 @@ function json(a){
 
 // utils
 function isString (obj){
-    return !!(obj === '' || (obj && obj.charCodeAt && obj.substr));
+  return !!(obj === '' || (obj && obj.charCodeAt && obj.substr));
 }
+function isObject (obj) {
+  return obj === Object(obj);
+};
 
 // trys to compile it to a number if it can
 function transform(token){
@@ -163,7 +166,7 @@ function compile_file(err, text){
 }
 
 function compile_text(err, text){
-  var data = parse(text)
+  var data = make_objs(parse(text));
 
   for (var e in data){
     var line = data[e];
@@ -187,7 +190,20 @@ function compile(data){
     }
   } else if (l === undefined){
     // if data is not a list, just pass it on
-    out(data);
+    if (isObject(data)){
+      out("{");
+      for (var k in data){
+        if(data.hasOwnProperty(k)){
+          out(json(k), ":");
+          compile(data[k]);
+          out(",");
+        }
+      }
+      rm(",");
+      out("}");
+    } else {
+      out(data);
+    }
   } else if (data[0] == ":"){
     // set!
     out(data[1], " = ")
@@ -226,7 +242,7 @@ function compile(data){
   } else if (data[0] == "js"){
     out(data[1].slice(1,-1))
   } else if (data[0] == "'"){
-    out(json(make_objs(data.slice(1))))
+    out(json(data.slice(1)))
   } else if (OPS[data[0]]){
     op = OPS[data[0]]
     out("(")
