@@ -1,0 +1,187 @@
+(def VERSION .002)
+
+(def fs (require 'fs))
+
+(def OPS (table
+  ; basic math
+  "+" "+"  "-" "-"  "*" "*"  "/" "/"  "%" "%"
+  ; comperison
+  ">" ">"  ">=" ">="  "<" "<"  "<=" "<="  "=" "==="  "!=" "!=="
+  ; function like
+  "inc" "++"  "dec" "--"
+  ; booleans
+  "and" "&&"  "or" "||"  "not" "!"))
+
+(def QUOTES_RE (new (RegExp "^['@!~#]+$")))
+
+; utils
+(def (json a) (JSON.stringify a))
+(def (is_string obj)
+   (js "!!(obj === '' || (obj && obj.charCodeAt && obj.substr))"))
+(def (is_object obj)
+   (if (is_list obj) false
+       (js "obj === Object(obj)")))
+(def is_list Array.isArray)
+(def (is_number obj)
+    (js "!!(obj === 0 || (obj && obj.toExponential && obj.toFixed))"))
+
+(def (err msg)
+     (js "throw msg")
+     false)
+
+; takes a string and spits out tokens
+; also takes care of comments and strings
+(def (tokenize code filename)
+    (def line 1)
+    (def column 1)
+    (def tokens (list))
+    (def word (list))
+    (def i 0)
+    (def len code.length)
+    (def (add_word)
+       (if (> word.length 0)
+          (let (token (word.join ""))
+             (: token.line line)
+             (: token.filename filename)
+             (: token.column column)
+             (tokens.push token)
+             (: word (list)))))
+    (while (< i len)
+       (: c (get code i))
+       ; main case block
+       (if
+           (or (= c "\n"))
+               (do (add_word)
+                   (: line (+ line 1))
+                   (: column 0))
+           ; its a space
+           (or (= c " ") (= c "\t"))
+               (add_word)
+           ; its a char that should appear by itself
+           (or (= c "(") (= c ")") (QUOTES_RE.exec c))
+               (do (add_word) (tokens.push c))
+           ; its a string
+           (= c "\"")
+               (do (add_word)
+                  (def next true)
+                  (word.push c)
+                  (while next
+                     (if (>= i len)
+                         (err (+ "unclosed \" " filename ":" line "," column)))
+                     (: i (+ i 1))
+                     (: column (+ column 1))
+                     (: c (get code i))
+                     (if (= c "\"") (: next false))
+                     (word.push c))
+                  (add_word))
+           (= c ";")
+               (do (add_word)
+                  (def next true)
+                  (while (and next (< i len))
+                     (: i (+ i 1))
+                     (: c (get code i))
+                     (if (= c "\n") (: next false)))
+                   ;WART: cant return wile loop
+                   false)
+
+           ; if its nont of the above just add it to the token
+           (word.push c))
+       (: i (+ i 1))
+       (: column (+ column 1)))
+    ; there might be an unadded word
+    (add_word)
+    ; return tokens
+    tokens)
+
+; trys to compile it to a number if it can
+(def (transform token)
+  (def number (parseFloat token))
+  (if (isNaN number) token
+      (= number 0) (parseInt token) ; hande the 0xFF case
+      number))
+
+(def (parse tokens)
+   (def stack (list))
+   (def line (list))
+   (def (squote q)
+      (: qline (list q))
+      (def t (tokens.shift 0))
+      (if
+         (= t "(")
+            (do (stack.push line)
+            (: line qline))
+         (do (qline.push (transform t)) (line.push qline))))
+   (def (spush)
+      (stack.push line)
+      (: line (list)))
+   (def (spop)
+      (let (up (stack.pop))
+          (up.push line)
+          (: line up)))
+   (def (next)
+      (def t (tokens.shift 0))
+      (if
+         (QUOTES_RE.exec t) (squote t)
+         (= t "(") (spush)
+         (= t ")") (spop)
+         (line.push (transform t))))
+   (while (> tokens.length 0)
+       (next))
+   line)
+
+
+; tests
+
+; sime testing message printer
+(def (test msg got needed)
+     (if (!= (json got) (json needed))
+         (console.log "* error testing:" msg
+                      "got" got "needed" needed)))
+
+(def (test_err msg fun needed)
+     (def got (js "
+        function(){
+           try { fun() }
+           catch (e)
+           { return e }
+        }()"))
+     (if (!= got needed)
+       (console.log "* error testing:" msg
+                    "got" (json got) "needed" (json needed))))
+
+(test "is_string" (is_string "foo") true)
+(test "is_object" (is_object '(a: b c: d)) true)
+(test "is_list" (is_list '(a b c d)) true)
+(test "is_number" (is_number 123) true)
+; some thing else
+(test "not is_string" (is_string '("f" "o" "o")) false)
+(test "not is_object" (is_object '(a b c d)) false)
+(test "not is_list" (is_list '(a: b c: d)) false)
+(test "not is_number" (is_number "123") false)
+
+; tokenize tests
+(test "" (tokenize "a b c d") '(a b c d))
+(test "" (tokenize "(a b c d)") (list "(" "a" "b" "c" "d" ")"))
+(test "" (tokenize "(123 abc)") (list "(" "123" "abc" ")"))
+(test "" (tokenize "'abc") (list "'" "abc"))
+(test "" (tokenize " \"hello world\" ") (list "\"hello world\""))
+(test "" (tokenize " ; foo bar \n \"hello world\" ") (list "\"hello world\""))
+
+; tokenize errors
+(test_err "unbaled string"
+   (fn () (tokenize "a\n\n  \"unclosed"))
+   "unclosed \" undefined:3,12")
+
+; parse tests
+(test "" (parse (tokenize "a b c d")) '(a b c d))
+(test "" (parse (tokenize "a (b c) d")) '(a (b c) d))
+(test "" (parse (tokenize "a '(b '1 2) d")) '(a '(b '1 2) d))
+(test "" (parse (tokenize "(print \"hello word\" 123)")) (list '(print "hello word" 123)))
+(test "" (parse (tokenize "((()))")) (list (list (list (list)))))
+
+(test_err "unbaled perens"
+   (fn () (parse (tokenize "(")))
+   "unclosed \" undefined:3,12")
+
+
+     

@@ -7,14 +7,14 @@ var OPS = {
   // basic math
   '+':'+', '-':'-', '*':'*', '/':'/', '%':'%',
   // comperison
-  '>':'>', '>=':'=>', '<':'<', '<=':'<=', '=':'===', '!=':'!==',
+  '>':'>', '>=':'>=', '<':'<', '<=':'<=', '=':'===', '!=':'!==',
   // function like
   'inc':'++', 'dec':'--',
   // booleans
-  'and':'&&', "or":'||', "not":"!"
+  'and':'&&', "or":'||'
 }
 
-var QUOTES_RE = /^['@!~#]+$/;
+var QUOTES_RE = /^['@~#]+$/;
 
 function json(a){
   return JSON.stringify(a);
@@ -27,6 +27,7 @@ function isString (obj){
 function isObject (obj) {
   return obj === Object(obj);
 };
+var isList = Array.isArray;
 
 // trys to compile it to a number if it can
 function transform(token){
@@ -34,27 +35,61 @@ function transform(token){
   if (isNaN(number)){
     return token;
   }
+  if (number == 0){
+    // parse the 0xFF case
+    number = parseInt(token);
+  }
   return number;
 }
 
 
 var builtins = {
-  each: function(fn, obj){
-    l = [];
+  not: function(arg){
+    return !arg;
+  },
+  each: function(obj, fn){
+    var l = [];
     for(var k in obj) {
       if(obj.hasOwnProperty(k)){
-        l.push(fn(k, obj[k]))
+        l.push(fn(obj[k], k))
       }
     }
     return l;
   },
-  map: function(fn,list){
-    l = [];
+  map: function(list, fn){
+    var l = [];
     for(var i in list) {
-      l.push(fn(list[i]))
+      l.push(fn(list[i], i))
     }
     return l;
   },
+  filter: function(list, fn){
+    var l = [];
+    for(var i in list) {
+      r = fn(list[i], i);
+      if (!r)
+        l.push(list[i]);
+    }
+    return l;
+  },
+  range: function(n){
+    var l = [];
+    for(var i=0;i<n;i++) {
+      l.push(i)
+    }
+    return l;
+  },
+  list: function(){
+    return Array.prototype.slice.call(arguments);
+  },
+  table: function(){
+    var l = Array.prototype.slice.call(arguments);
+    var t = {};
+    for(var i = 0; i < l.length; i += 2){
+      t[l[i]] = l[i+1];
+    }
+    return t
+  }
 };
 
 // takes a string and spits out tokens
@@ -84,6 +119,8 @@ function tokenize(code){
       while (c !== '"'){
         i++;
         c = code.charAt(i);
+        // hop over \"
+        if (c == "\\") i ++;
       }
       tokens.push(code.substring(start, i+1))
     } else if (c === '(' || c === ')' || /\s/.exec(c)){
@@ -131,7 +168,7 @@ function parse(code){
         stack = [tmp].concat(stack);
         stack[0].push(token)
       } else {
-        stack[0].push([token, tokens[i]]);
+        stack[0].push([token, transform(tokens[i])]);
       }
     } else {
       stack[0].push(transform(token));
@@ -208,9 +245,32 @@ function compile(data){
     // set!
     out(data[1], " = ")
     compile(data[2])
+
+  } else if (data[0] == "def"){
+    // a define
+    if (isList(data[1])){
+      // funciton
+      args = data[1]
+      name = args.shift(0)
+      out("function ", name)
+      out("(", data[1], "){\n")
+      for(var i = 2; i < data.length; i ++){
+        if (i == data.length-1){
+          out("return ")
+        }
+        compile(data[i])
+        out(";\n")
+      }
+      out("}")
+    } else {
+      // just a var
+      out("var ", data[1], " = ")
+      compile(data[2])
+    }
+
   } else if (data[0] == "fn"){
     // creates a new function
-    out("function (", data[1], "){")
+    out("function (", data[1], "){\n")
     for(var i = 2; i < data.length; i ++){
       if (i == data.length-1){
         out("return ")
@@ -219,18 +279,26 @@ function compile(data){
       out(";\n")
     }
     out("}")
+  } else if (data[0] == "while"){
+    // creates a while loop
+    out("while (")
+    compile(data[1])
+    out("){\n")
+    for(var i = 2; i < data.length; i ++){
+      compile(data[i])
+      out(";\n")
+    }
+    out("}")
   } else if (data[0] == "let"){
     // let create new closure via a function
     out("(function (){\n")
-    out("var ")
     vars = data[1]
     for(var i = 0; i < vars.length; i +=2){
+      out("var ")
       out(vars[i],"=")
       compile(vars[i+1])
-      out(", ")
+      out(";\n")
     }
-    rm(", ")
-    out(";\n")
     for(var i = 2; i < data.length; i ++){
       if (i == data.length-1){
         out("return ")
@@ -239,12 +307,52 @@ function compile(data){
       out(";\n")
     }
     out("})()")
+  } else if (data[0] == "do"){
+    // let create new closure via a function
+    out("(function (){\n")
+    for(var i = 1; i < data.length; i ++){
+      if (i == data.length-1){
+        out("return ")
+      }
+      compile(data[i])
+      out(";\n")
+    }
+    out("})()")
+  } else if (data[0] == "@"){
+    out("this.")
+    compile(data[1])
+  } else if (data[0] == "get"){
+    compile(data[1])
+    out("[")
+    compile(data[2])
+    out("]")
+  } else if (data[0] == "set"){
+    out("(")
+    compile(data[1])
+    out("[")
+    compile(data[2])
+    out("] = ")
+    compile(data[3])
+    out(")")
+  } else if (data[0] == "new"){
+    out("(new ")
+    compile(data[1])
+    out(")")
+  } else if (data[0] == "return"){
+    out("return ");
+    if (data[1]){
+      compile(data[1])
+    }
   } else if (data[0] == "js"){
     out(data[1].slice(1,-1))
   } else if (data[0] == "'"){
-    out(json(data.slice(1)))
+    if (data.length == 2){
+      out(json(data[1]));
+    } else {
+      out(json(data.slice(1)));
+    }
   } else if (OPS[data[0]]){
-    op = OPS[data[0]]
+    var op = OPS[data[0]]
     out("(")
     for(var i = 1; i < data.length; i ++){
       compile(data[i])
@@ -253,6 +361,7 @@ function compile(data){
     rm(" "); rm(op); rm(" ")
     out(")")
   } else if (data[0] == "if"){
+    out("(")
     for(var i = 1; i < data.length; i += 2){
       if (i == data.length - 1){
         compile(data[i])
@@ -267,7 +376,7 @@ function compile(data){
     if ((data.length - 1) % 2 == 0) {
       out(" false ");
     }
-    out(";")
+    out(")")
   } else if (data[0] == "mac"){
     // macro definition
     var name = data[1]
@@ -323,6 +432,7 @@ function add_fn(name){
   if (name in added) {
     return;
   }
+  added[name] = true
   var fn = builtins[name];
   var def = "var " + name + " = " + fn + ";\n";
   buffer = [def].concat(buffer);
@@ -360,7 +470,7 @@ function make_objs(it){
     var has_keys = false;
     for(var i = 0; i < it.length; i++){
       var e = it[i];
-      if (isString(e) && e[e.length - 1] == ":"){
+      if (isString(e) && e.length > 1 && e[e.length - 1] == ":"){
         has_keys = true;
         o[e.slice(0, e.length - 1)] = it[i + 1];
         i++;
@@ -373,6 +483,9 @@ function make_objs(it){
       // its an object
       return o;
     } else if (!has_keys && has_elem){
+      // its a list
+      return l;
+    } else if (!has_keys && !has_elem){
       // its a list
       return l;
     } else {
