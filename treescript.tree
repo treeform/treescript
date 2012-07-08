@@ -29,7 +29,15 @@
   (js "throw msg")
   false)
 
-  
+; trys to compile it to a number if it can
+(def (try_number token)
+  (def number (parseFloat token))
+  (if 
+    (isNaN number) token ; its not a number - a string
+    (= number 0) (parseInt token) ; hande the 0xFF case
+    number))
+
+; --------------------------------------------------  
 ; takes a string and spits out tokens
 ; also takes care of comments and strings
 (def (tokenize code filename)
@@ -94,12 +102,7 @@
   ; return tokens
   tokens)
 
-; trys to compile it to a number if it can
-(def (transform token)
-  (def number (parseFloat token))
-  (if (isNaN number) token
-    (= number 0) (parseInt token) ; hande the 0xFF case
-    number))
+; --------------------------------------------------
 
 ; makes ( ) and ' behave right
 (def (parse tokens)
@@ -113,13 +116,15 @@
       (= t "(")
         (do (stack.push line)
         (: line qline))
-      (do (qline.push (transform t)) (line.push qline))))
+      (do (qline.push (try_number t)) (line.push qline))))
   ; ) open perens
   (def (spush)
     (stack.push line)
     (: line (list)))
   ; ) close perens
   (def (spop)   
+    (if (< stack.length 1) 
+      (err "unbalanced perens"))
     (let (up (stack.pop))
       (up.push line)
       (: line up)))
@@ -130,13 +135,14 @@
       (QUOTES_RE.exec t) (squote t)
       (= t "(") (spush)
       (= t ")") (spop)
-      (line.push (transform t))))
+      (line.push (try_number t))))
   (while (> tokens.length 0)
      (next))
   (if (> stack.length 0)
     (err "unbalanced perens"))
   line)
 
+; --------------------------------------------------
 
 ; the compiler function
 (def (compile tree)
@@ -150,7 +156,7 @@
       (buffer.pop)))
   ; sub expression compiler      
   (def (sub tree)
-    (console.log "sub" tree)
+    ;(console.log "sub" tree)
     (if 
       (is_list tree)
         (do 
@@ -160,13 +166,14 @@
           (wr "(")
           (def i 1)
           (while (< i tree.length)
-            (wr (sub (get tree i)))
+            (sub (get tree i))
             (wr ",")
             (: i (+ i 1)))
           (rm ",")
           (wr ")")
-          (console.log buffer))
-      tree))
+          ;(console.log buffer)
+          )
+      (wr tree)))
   ; loop through all top level expressions
   (def i 0)
   (while (< i tree.length)
@@ -176,8 +183,7 @@
   ; write out the final buffer
   (buffer.join ""))
 
-
-
+; --------------------------------------------------
 ; tests
 
 ; sime testing message printer
@@ -185,7 +191,7 @@
   (if (!= (json got) (json needed))
     (console.log "* error testing:" msg
        "got" got "needed" needed)
-    (console.log "ok")))
+    (console.log msg "ok")))
 
 (def (test_err msg fun needed)
   (def got (js "
@@ -209,12 +215,12 @@
 (test "not is_number" (is_number "123") false)
 
 ; tokenize tests
-(test "" (tokenize "a b c d") '(a b c d))
-(test "" (tokenize "(a b c d)") (list "(" "a" "b" "c" "d" ")"))
-(test "" (tokenize "(123 abc)") (list "(" "123" "abc" ")"))
-(test "" (tokenize "'abc") (list "'" "abc"))
-(test "" (tokenize " \"hello world\" ") (list "\"hello world\""))
-(test "" (tokenize " ; foo bar \n \"hello world\" ") (list "\"hello world\""))
+(test "tokanize 1" (tokenize "a b c d") '(a b c d))
+(test "tokanize 2" (tokenize "(a b c d)") (list "(" "a" "b" "c" "d" ")"))
+(test "tokanize 3" (tokenize "(123 abc)") (list "(" "123" "abc" ")"))
+(test "tokanize 4" (tokenize "'abc") (list "'" "abc"))
+(test "tokanize 5" (tokenize " \"hello world\" ") (list "\"hello world\""))
+(test "tokanize 6" (tokenize " ; foo bar \n \"hello world\" ") (list "\"hello world\""))
 
 ; tokenize errors
 (test_err "unclosed string"
@@ -222,11 +228,11 @@
   "unclosed \" undefined:3,15")
 
 ; parse tests
-(test "" (parse (tokenize "a b c d")) '(a b c d))
-(test "" (parse (tokenize "a (b c) d")) '(a (b c) d))
-(test "" (parse (tokenize "a '(b '1 2) d")) '(a '(b '1 2) d))
-(test "" (parse (tokenize "(print \"hello word\" 123)")) (list '(print "hello word" 123)))
-(test "" (parse (tokenize "((()))")) (list (list (list (list)))))
+(test "parse 1" (parse (tokenize "a b c d")) '(a b c d))
+(test "parse 2" (parse (tokenize "a (b c) d")) '(a (b c) d))
+(test "parse 3" (parse (tokenize "a '(b '1 2) d")) '(a '(b '1 2) d))
+(test "parse 4" (parse (tokenize "(print \"hello word\" 123)")) (list '(print "hello word" 123)))
+(test "parse 5" (parse (tokenize "((()))")) (list (list (list (list)))))
 
 ; perens tests
 (test_err "unbalanced perens"
@@ -234,11 +240,32 @@
   "unbalanced perens")
 
 ; compile tests
-(test "" (compile (parse (tokenize 
+(test "compile basic" (compile (parse (tokenize 
   "(console.log \"hi world\")"))) 
   "console.log(\"hi world\");\n")
 
-(test "" (compile (parse (tokenize 
+; compile nested functions
+(test "compile nested 1" (compile (parse (tokenize 
   "(console.log (add \"hi world\" foo))"))) 
   "console.log(add(\"hi world\",foo));\n")
+(test "compile nested 2" (compile (parse (tokenize 
+  "(a (b (c (d (e (f (g)))))))"))) 
+  "a(b(c(d(e(f(g()))))));\n")  
+(test "compile nested 3" (compile (parse (tokenize 
+  "(a (b (c (d (e (f (g 1) 2) 3) 4) 5) 6) 7)"))) 
+  "a(b(c(d(e(f(g(1),2),3),4),5),6),7);\n")    
+(test "compile nested 4" (compile (parse (tokenize 
+  "(a (b 1 2 3) (c 1 2 3))"))) 
+  "a(b(1,2,3),c(1,2,3));\n")  
+  
+  
+; special forms 
+
+; if
+
+; fn
+
+; quote
+
+; js
    
