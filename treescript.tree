@@ -103,7 +103,6 @@
   tokens)
 
 ; --------------------------------------------------
-
 ; makes ( ) and ' behave right
 (def (parse tokens)
   (def stack (list))
@@ -143,7 +142,6 @@
   line)
 
 ; --------------------------------------------------
-
 ; the compiler function
 (def (compile tree)
   (def buffer (list))
@@ -186,7 +184,7 @@
 ; --------------------------------------------------
 ; tests
 
-; sime testing message printer
+; simple testing message printer
 (def (test msg got needed)
   (if (!= (json got) (json needed))
     (console.log "* error testing:" msg
@@ -262,7 +260,9 @@
 ; special forms 
 
 ; if
-
+(test "compile nested 4" (compile (parse (tokenize 
+  "(if a b c)"))) 
+  "a?b:c;\n")  
 ; fn
 
 ; quote
