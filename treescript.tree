@@ -159,18 +159,27 @@
       (is_list tree)
         (do 
           (def head (get tree 0))
-          ; regular function call
-          (wr head)
-          (wr "(")
-          (def i 1)
-          (while (< i tree.length)
-            (sub (get tree i))
-            (wr ",")
-            (: i (+ i 1)))
-          (rm ",")
-          (wr ")")
-          ;(console.log buffer)
-          )
+          (if 
+            (= head "if")
+            (do
+              (wr (get tree 1))
+              (wr "?")
+              (wr (get tree 2))
+              (wr ":")
+              (wr (get tree 3)))
+            ; regular function call            
+            (do
+              (wr head)
+                (wr "(")
+                (def i 1)
+                (while (< i tree.length)
+                  (sub (get tree i))
+                  (wr ",")
+                  (: i (+ i 1)))
+                (rm ",")
+                (wr ")")
+                ;(console.log buffer)
+                )))
       (wr tree)))
   ; loop through all top level expressions
   (def i 0)
