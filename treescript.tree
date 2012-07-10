@@ -113,9 +113,12 @@
     (def t (tokens.shift 0))
     (if
       (= t "(")
-        (do (stack.push line)
+      (do 
+        (stack.push line)
         (: line qline))
-      (do (qline.push (try_number t)) (line.push qline))))
+      (do 
+        (qline.push (try_number t)) 
+        (line.push qline))))
   ; ) open perens
   (def (spush)
     (stack.push line)
@@ -155,9 +158,16 @@
       
   ; quote compiler
   (def (quotate tree)
+    (console.log (JSON.stringify tree))
     (if 
       (is_list tree)
-      (wr tree)
+      (do 
+        (wr "[")
+        (def i 0)
+        (while (< i tree.length)
+          (quotete e)
+          (: i (+ i 1)))
+        (wr "]"))
       (is_string tree)
       (do 
         (wr "\"")
@@ -198,8 +208,10 @@
                 (: i (+ i 1)))
               (wr "})"))
             (= head "'")
-            (do
-              (quotate (get tree 1)))
+            (if
+              (> tree.length 2)
+              (wr (JSON.stringify (tree.slice 1)))
+              (wr (JSON.stringify (get tree 1))))
             ; regular function call            
             (do
               (wr head)
@@ -273,6 +285,8 @@
 (test "parse 3" (parse (tokenize "a '(b '1 2) d")) '(a '(b '1 2) d))
 (test "parse 4" (parse (tokenize "(print \"hello word\" 123)")) (list '(print "hello word" 123)))
 (test "parse 5" (parse (tokenize "((()))")) (list (list (list (list)))))
+(test "parse 6" (parse (tokenize "'(a)")) (list (list "\'" "a")))
+(test "parse 7" (parse (tokenize "'a")) (list (list "\'" (list "a"))))
 
 ; perens tests
 (test_err "unbalanced perens"
@@ -328,12 +342,19 @@
 (test "fn5" (compile (parse (tokenize 
   "(fn ())"))) 
   "(function(){\n});\n") 
+  
 ; quote
 (test "quote1" (compile (parse (tokenize 
   "'a"))) 
   "\"a\";\n") 
-(test "quote1" (compile (parse (tokenize 
+(test "quote2" (compile (parse (tokenize 
   "'avacado"))) 
   "\"avacado\";\n") 
+(test "quote3" (compile (parse (tokenize 
+  "'(a b c)"))) 
+  "[\"a\",\"b\",\"c\"];\n") 
+(test "quote4" (compile (parse (tokenize 
+  "'(a)"))) 
+  "[\"a\"];\n") 
 ; js
    
