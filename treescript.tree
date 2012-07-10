@@ -329,8 +329,11 @@
   "(fn ())"))) 
   "(function(){\n});\n") 
 ; quote
-(test "quote" (compile (parse (tokenize 
+(test "quote1" (compile (parse (tokenize 
   "'a"))) 
   "\"a\";\n") 
+(test "quote1" (compile (parse (tokenize 
+  "'avacado"))) 
+  "\"avacado\";\n") 
 ; js
    
