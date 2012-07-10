@@ -12,7 +12,7 @@
   ; booleans
   "and" "&&"  "or" "||"  "not" "!"))
 
-(def QUOTES_RE (new (RegExp "^['@!~#]+$")))
+(def QUOTES_RE (new (RegExp "^['@~#]+$")))
 
 ; utils
 (def (json a) (JSON.stringify a))
@@ -182,6 +182,17 @@
         (do 
           (def head (get tree 0))
           (if 
+            (get OPS head)
+            (do
+              (def op (get OPS head))
+              (def i 1)
+              (wr "(")
+              (while (< i tree.length)
+                (sub (get tree i))
+                (wr op)
+                (: i (+ i 1)))
+              (rm op)
+              (wr ")"))
             (= head "if")
             (do
               (def i 1)
@@ -312,9 +323,27 @@
   "(a (b 1 2 3) (c 1 2 3))"))) 
   "a(b(1,2,3),c(1,2,3));\n")  
   
-  
+; operators
+(test "operators1" (compile (parse (tokenize 
+  "(+ 1 2)"))) 
+  "(1+2);\n")  
+(test "operators2" (compile (parse (tokenize 
+  "(+ 1 2 3 4)"))) 
+  "(1+2+3+4);\n") 
+(test "operators3" (compile (parse (tokenize 
+  "(+ 1 (/ 2 1) 3 4)"))) 
+  "(1+(2/1)+3+4);\n") 
+(test "operators4" (compile (parse (tokenize 
+  "(= a b)"))) 
+  "(a===b);\n")   
+(test "operators5" (compile (parse (tokenize 
+  "(!= a b)"))) 
+  "(a!==b);\n")   
+(test "operators6" (compile (parse (tokenize 
+  "(> a b c)"))) 
+  "(a>b>c);\n") 
+      
 ; special forms 
-
 ; if
 (test "if1" (compile (parse (tokenize 
   "(if a b c)"))) 
