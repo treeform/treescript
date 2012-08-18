@@ -1,3 +1,7 @@
+/*
+This version is the original version written in javascript.
+It was used to write the version .002 in treescript itself
+*/
 VERSION = .001
 
 var fs = require("fs");

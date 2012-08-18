@@ -1,1 +1,178 @@
-(console.log (each (fn (k v) (+ k v)) '(a: 1 b: 2 c: 3 d: 4)))
+
+; simple testing message printer
+(def (test msg got needed)
+  (if (!= (json got) (json needed))
+    (console.log "* error testing:" msg
+       "got" got "needed" needed)
+    (console.log msg "ok")))
+
+(def (test_err msg fun needed)
+  (def got (js "
+    function(){
+       try { fun() }
+       catch (e)
+       { return e }
+    }()"))
+  (if (!= got needed)
+    (console.log "* error testing:" msg
+      "got" (json got) "needed" (json needed))))
+
+(test "is_string" (is_string "foo") true)
+(test "is_object" (is_object (table 'a 'b 'c 'd)) true)
+(test "is_list" (is_list '(a b c d)) true)
+(test "is_number" (is_number 123) true)
+; some thing else
+(test "not is_string" (is_string '("f" "o" "o")) false)
+(test "not is_object" (is_object '(a b c d)) false)
+(test "not is_list" (is_list (table 'a 'b 'c 'd)) false)
+(test "not is_number" (is_number "123") false)
+
+; tokenize tests
+(test "tokanize 1" (tokenize "a b c d") '(a b c d))
+(test "tokanize 2" (tokenize "(a b c d)") (list "(" "a" "b" "c" "d" ")"))
+(test "tokanize 3" (tokenize "(123 abc)") (list "(" "123" "abc" ")"))
+(test "tokanize 4" (tokenize "'abc") (list "'" "abc"))
+(test "tokanize 5" (tokenize " \"hello world\" ") (list "\"hello world\""))
+(test "tokanize 6" (tokenize " ; foo bar \n \"hello world\" ") (list "\"hello world\""))
+(test "tokanize 7" (tokenize " \"hello \\\"world\" ") (list "\"hello \\\"world\""))
+
+; tokenize errors
+(test_err "unclosed string"
+  (fn () (tokenize "a\n\n  \"unclosed..."))
+  "unclosed \" undefined:3,15")
+
+; parse tests
+(test "parse 1" (parse (tokenize "a b c d")) '(a b c d))
+(test "parse 2" (parse (tokenize "a (b c) d")) '(a (b c) d))
+(test "parse 3" (parse (tokenize "a '(b '1 2) d")) '(a '(b '1 2) d))
+(test "parse 4" (parse (tokenize "(print \"hello word\" 123)")) (list '(print "hello word" 123)))
+(test "parse 5" (parse (tokenize "((()))")) (list (list (list (list)))))
+;(test "parse 6" (parse (tokenize "'(a)")) (list (list "\'" "a")))
+;(test "parse 7" (parse (tokenize "'a")) (list (list "\'" (list "a"))))
+(test "parse 8" (parse (tokenize "()()()")) (list (list) (list) (list)))
+(test "parse 9" (parse (tokenize 
+  "(a (b 1) 2)"))
+  (list (list 'a (list 'b 1) 2)))
+  
+; perens tests
+(test_err "unbalanced perens"
+  (fn () (parse (tokenize "(")))
+  "unbalanced perens, not enough )")
+
+; compile tests
+(test "compile basic" (compile (parse (tokenize 
+  "(console.log \"hi world\")"))) 
+  "console.log(\"hi world\");\n")
+
+; compile nested functions
+(test "compile nested 1" (compile (parse (tokenize 
+  "(console.log (add \"hi world\" foo))"))) 
+  "console.log(add(\"hi world\",foo));\n")
+(test "compile nested 2" (compile (parse (tokenize 
+  "(a (b (c (d (e (f (g)))))))"))) 
+  "a(b(c(d(e(f(g()))))));\n")  
+(test "compile nested 3" (compile (parse (tokenize 
+  "(a (b (c (d (e (f (g 1) 2) 3) 4) 5) 6) 7)"))) 
+  "a(b(c(d(e(f(g(1),2),3),4),5),6),7);\n")    
+(test "compile nested 4" (compile (parse (tokenize 
+  "(a (b 1 2 3) (c 1 2 3))"))) 
+  "a(b(1,2,3),c(1,2,3));\n")  
+  
+; operators
+(test "operators1" (compile (parse (tokenize 
+  "(+ 1 2)"))) 
+  "(1+2);\n")  
+(test "operators2" (compile (parse (tokenize 
+  "(+ 1 2 3 4)"))) 
+  "(1+2+3+4);\n") 
+(test "operators3" (compile (parse (tokenize 
+  "(+ 1 (/ 2 1) 3 4)"))) 
+  "(1+(2/1)+3+4);\n") 
+(test "operators4" (compile (parse (tokenize 
+  "(= a b)"))) 
+  "(a===b);\n")   
+(test "operators5" (compile (parse (tokenize 
+  "(!= a b)"))) 
+  "(a!==b);\n")   
+(test "operators6" (compile (parse (tokenize 
+  "(> a b c)"))) 
+  "(a>b>c);\n") 
+      
+; special forms 
+; def 
+(test "def1" (compile (parse (tokenize 
+  "(def a 1 )"))) 
+  "var a;\n(a=1);\n") 
+(test "def2" (compile (parse (tokenize 
+  "(def a (b(c d)))"))) 
+  "var a;\n(a=b(c(d)));\n")   
+(test "def3" (compile (parse (tokenize 
+  "(def (a b c) b c)"))) 
+  "var a;\n(a=(function(b,c){\nb;\nreturn c;\n}));\n") 
+(test "def4" (compile (parse (tokenize 
+  "(def (a) (def c 0))"))) 
+  "var a;\n(a=(function(){\nvar c;\nreturn (c=0);\n}));\n") 
+    
+; if
+(test "if1" (compile (parse (tokenize 
+  "(if a b c)"))) 
+  "a?b:c;\n")  
+(test "if2" (compile (parse (tokenize 
+  "(if a b c d e f g)"))) 
+  "a?b:c?d:e?f:g;\n")  
+(test "if3" (compile (parse (tokenize 
+  "(if a b c d e f)"))) 
+  "a?b:c?d:e?f:null;\n") 
+(test "if4" (compile (parse (tokenize 
+  "(if (> 1 2) a)"))) 
+  "(1>2)?a:null;\n") 
+  
+; fn
+(test "fn1" (compile (parse (tokenize 
+  "(fn (a) b c)"))) 
+  "(function(a){\nb;\nreturn c;\n});\n") 
+(test "fn2" (compile (parse (tokenize 
+  "(fn (a b c) b c)"))) 
+  "(function(a,b,c){\nb;\nreturn c;\n});\n") 
+(test "fn3" (compile (parse (tokenize 
+  "(fn (a b c) (b c))"))) 
+  "(function(a,b,c){\nreturn b(c);\n});\n") 
+(test "fn4" (compile (parse (tokenize 
+  "(fn () (b c))"))) 
+  "(function(){\nreturn b(c);\n});\n") 
+(test "fn5" (compile (parse (tokenize 
+  "(fn ())"))) 
+  "(function(){\n});\n") 
+  
+; do  
+(test "do1" (compile (parse (tokenize 
+  "(do a b c d e f)"))) 
+  "(function(){\na;\nb;\nc;\nd;\ne;\nreturn f;\n}());\n")   
+
+; while  
+(test "while1" (compile (parse (tokenize 
+  "(while a b c d e f)"))) 
+  "(function(){while(a){\nb;\nc;\nd;\ne;\nf;\n}}());\n")   
+    
+; quote
+(test "quote1" (compile (parse (tokenize 
+  "'a"))) 
+  "\"a\";\n") 
+(test "quote2" (compile (parse (tokenize 
+  "'avacado"))) 
+  "\"avacado\";\n") 
+(test "quote3" (compile (parse (tokenize 
+  "'(a b c)"))) 
+  "[\"a\",\"b\",\"c\"];\n") 
+;(test "quote4" (compile (parse (tokenize 
+;  "'(a)"))) 
+;  "[\"a\"];\n") 
+
+; js
+(test "js1" (compile (parse (tokenize 
+  "(js \"for(var i=0;i<10;i++){}\")"))) 
+  "for(var i=0;i<10;i++){};\n")
+(test "js2" (compile (parse (tokenize 
+  "(js \"/* (comment) */\")"))) 
+  "/* (comment) */;\n")
+  
