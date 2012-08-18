@@ -1,6 +1,50 @@
 (def VERSION .002)
 
-(def fs (require 'fs))
+(def fs (require "fs"))
+
+; utils
+(def (json a) (JSON.stringify a))
+(def (is_string obj)
+  (js "!!(obj === '' || (obj && obj.charCodeAt && obj.substr))"))
+(def is_list Array.isArray)
+(def (is_object obj)
+  (if (is_list obj) 
+    false
+    (js "(obj === Object(obj))")))
+(def (is_number obj)
+  (js "!!(obj === 0 || (obj && obj.toExponential && obj.toFixed))"))
+(def (rest l) (l.slice 1))
+(def (join) (js "
+  var ll=arguments.length, l=[]; 
+  for(var i=0; i < ll; i++) {
+    var a = arguments[i];
+    for(e in a) l.push(a[e]);
+  }; 
+  ") 
+  l)
+(def (list) (js "
+  var ll=arguments.length, l=[]; 
+  for(var i=0; i < ll; i++) {
+    l.push(arguments[i]);
+  }; 
+  ") 
+  l)
+(def (table) (js "
+  var ll=arguments.length, t={}; 
+  for(var i=0; i < ll; i+=2) {
+    t[arguments[i]] = arguments[i+1]
+  }; 
+  ") 
+  t)
+(def (str_join l str)
+  (l.join str))
+(def (get l i) (js "l[i]"))
+(def (set l i e) (js "l[i]=e") e)
+(def (err msg)
+  (js "throw msg")
+  false)
+  
+  
 
 (def OPS (table
   ; basic math
@@ -14,20 +58,6 @@
 
 (def QUOTES_RE (new (RegExp "^['@~#]+$")))
 
-; utils
-(def (json a) (JSON.stringify a))
-(def (is_string obj)
-  (js "!!(obj === '' || (obj && obj.charCodeAt && obj.substr))"))
-(def (is_object obj)
-  (if (is_list obj) false
-    (js "obj === Object(obj)")))
-(def is_list Array.isArray)
-(def (is_number obj)
-  (js "!!(obj === 0 || (obj && obj.toExponential && obj.toFixed))"))
-
-(def (err msg)
-  (js "throw msg")
-  false)
 
 ; trys to compile it to a number if it can
 (def (try_number token)
@@ -50,7 +80,8 @@
   (def (add_word)
     (if 
       (> word.length 0)
-      (let (token (word.join ""))
+      (do 
+        (def token (word.join ""))
         (: token.line line)
         (: token.filename filename)
         (: token.column column)
@@ -85,6 +116,11 @@
             (: column (+ column 1))
             (: c (get code i))
             (if (= c "\"") (: next false))
+            (if (= c "\\") 
+              (do 
+                (word.push c)
+                (: i (+ i 1))
+                (: c (get code i))))
             (word.push c))
           (add_word))
       (= c ";")
@@ -131,8 +167,9 @@
   ; ) close perens
   (def (spop)   
     (if (< stack.length 1) 
-      (err "unbalanced perens"))
-    (let (up (stack.pop))
+      (err "unbalanced perens, to many )"))
+    (do 
+      (def up (stack.pop))
       (up.push line)
       (: line up)))
   ; dispatch function
@@ -146,7 +183,7 @@
   (while (> tokens.length 0)
      (next))
   (if (> stack.length 0)
-    (err "unbalanced perens"))
+    (err "unbalanced perens, not enough )"))
   line)
 
 ; --------------------------------------------------
@@ -179,79 +216,185 @@
         (wr tree)
         (wr "\""))))
       
+  (def SCOPE_MARK "//$SCOPE$")  
+  (def scope_stack (list))
+  (def (scope_start) 
+    (scope_stack.push (list))
+    (wr SCOPE_MARK))
+  (def (scope_end) 
+    (def vars (scope_stack.pop))
+    (def i (- buffer.length 1))
+    (while (!= (get buffer i) SCOPE_MARK)
+      (: i (- i 1)))
+    (set buffer i 
+      (if vars.length 
+        (+ "var " (str_join vars ",") ";\n")
+        "")))
+      
+  
+  (def (scope_add name)
+    (def top (get scope_stack (- scope_stack.length 1)))
+    (top.push name))
+      
+  (def (co_def head tree)
+    (def what (get tree 1))
+    (wr "(")
+    (if (is_list what)
+        (do
+          (def fn_name (get what 0))
+          (scope_add fn_name)
+          (wr fn_name)
+          (wr "=")
+          (def tree2 (join 
+            (list "fn") 
+            (list (rest (get tree 1))) 
+            (tree.slice 2)))
+          (co_fn head tree2))
+        (do 
+          (scope_add what)
+          (wr what)
+          (wr "=")
+          (sub (get tree 2))))
+    (wr ")"))
+    
+  (def (co_set head tree)
+    (wr "(")
+    (wr (get tree 1))
+    (wr "=")
+    (sub (get tree 2))
+    (wr ")"))
+            
+  (def (co_ops head tree)
+    (def op (get OPS head))
+    (def i 1)
+    (wr "(")
+    (while (< i tree.length)
+      (sub (get tree i))
+      (wr op)
+      (: i (+ i 1)))
+    (rm op)
+    (wr ")"))
+    
+  (def (co_js head tree)
+    (def codestr (get tree 1))
+    (wr (codestr.slice 1 -1)))
+    
+  (def (co_if head tree)
+    (def i 1)
+    (while (< (+ i 1) tree.length)
+      (sub (get tree i))
+      (wr "?")
+      (: i (+ i 1))
+      (sub (get tree i))
+      (wr ":")
+      (: i (+ i 1)))
+    (if (< i tree.length)
+      (sub (get tree i))
+      (wr "null")))
+  
+  (def (co_fn head tree)
+    (wr "(function(")
+    (def args (get tree 1))
+    (wr args)
+    (wr "){\n")
+    (scope_start)
+    (def i 2)
+    (while (< i tree.length)
+      (if (= i (- tree.length 1))
+        (wr "return "))
+      (sub (get tree i))
+      (wr ";\n")
+      (: i (+ i 1)))
+    (scope_end)
+    (wr "})"))
+
+  (def (co_do head tree)
+    (wr "(function(){\n")
+    (def i 1)
+    (while (< i tree.length)
+      (if (= i (- tree.length 1))
+        (wr "return "))
+      (sub (get tree i))
+      (wr ";\n")
+      (: i (+ i 1)))
+    (wr "}())"))
+    
+  (def (co_while head tree)
+    (wr "(function(){")
+    (wr "while(")
+    (sub (get tree 1))
+    (wr "){\n")
+    (def i 2)
+    (while (< i tree.length)
+      (sub (get tree i))
+      (wr ";\n")
+      (: i (+ i 1)))
+    (wr "}}())"))
+        
+  (def (co_new head tree)      
+    (wr "(new ")
+    (sub (get tree 1))
+    (wr ")"))
+        
+  (def (co_quote head tree)
+    (if
+      (> tree.length 2)
+      (wr (JSON.stringify (tree.slice 1)))
+      (wr (JSON.stringify (get tree 1)))))
+      
+  (def (co_regular_fn_call head tree)
+    (wr head)
+    (wr "(")
+    (def i 1)
+    (while (< i tree.length)
+      (sub (get tree i))
+      (wr ",")
+      (: i (+ i 1)))
+    (rm ",")
+    (wr ")"))
+    
   ; sub expression compiler      
   (def (sub tree)
     ;(console.log "sub" tree)
     (if 
       (is_list tree)
-        (do 
-          (def head (get tree 0))
-          (if 
-            (get OPS head)
-            (do
-              (def op (get OPS head))
-              (def i 1)
-              (wr "(")
-              (while (< i tree.length)
-                (sub (get tree i))
-                (wr op)
-                (: i (+ i 1)))
-              (rm op)
-              (wr ")"))
-            (= head "js")
-            (do 
-              (def codestr (get tree 1))
-              (wr (codestr.slice 1 -1)))
-            (= head "if")
-            (do
-              (def i 1)
-              (while (< (+ i 1) tree.length)
-                (wr (get tree i))
-                (wr "?")
-                (: i (+ i 1))
-                (wr (get tree i))
-                (wr ":")
-                (: i (+ i 1)))
-              (if (< i tree.length)
-                (wr (get tree i))
-                (wr "null")))
-            (= head "fn")
-            (do
-              (wr "(function(")
-              (def args (get tree 1))
-              (wr args)
-              (wr "){\n")
-              (def i 2)
-              (while (< i tree.length)
-                (sub (get tree i))
-                (wr ";\n")
-                (: i (+ i 1)))
-              (wr "})"))
-            (= head "'")
-            (if
-              (> tree.length 2)
-              (wr (JSON.stringify (tree.slice 1)))
-              (wr (JSON.stringify (get tree 1))))
-            ; regular function call            
-            (do
-              (wr head)
-                (wr "(")
-                (def i 1)
-                (while (< i tree.length)
-                  (sub (get tree i))
-                  (wr ",")
-                  (: i (+ i 1)))
-                (rm ",")
-                (wr ")")
-                ;(console.log buffer)
-                )))
+      (do 
+        (def head (get tree 0))
+        (if 
+          (get OPS head) 
+          (co_ops head tree)
+          (= head "def")
+          (co_def head tree)
+          (= head "js")  
+          (co_js head tree)
+          (= head "if")  
+          (co_if head tree)
+          (= head "fn")  
+          (co_fn head tree)
+          (= head "do")  
+          (co_do head tree)
+          (= head "while")  
+          (co_while head tree)
+          (= head "new")  
+          (co_new head tree)
+          (= head ":")  
+          (co_set head tree)
+          (= head "'")
+          (co_quote head tree)
+          ; regular function call 
+          (co_regular_fn_call head tree)))           
       (wr tree)))
+      
+  (scope_start)
+  
   ; loop through all top level expressions
   (def i 0)
   (while (< i tree.length)
     (sub (get tree i))
     (wr ";\n")
     (: i (+ i 1)))
+    
+  (scope_end)    
   ; write out the final buffer
   (buffer.join ""))
 
@@ -277,13 +420,13 @@
       "got" (json got) "needed" (json needed))))
 
 (test "is_string" (is_string "foo") true)
-(test "is_object" (is_object '(a: b c: d)) true)
+(test "is_object" (is_object (table 'a 'b 'c 'd)) true)
 (test "is_list" (is_list '(a b c d)) true)
 (test "is_number" (is_number 123) true)
 ; some thing else
 (test "not is_string" (is_string '("f" "o" "o")) false)
 (test "not is_object" (is_object '(a b c d)) false)
-(test "not is_list" (is_list '(a: b c: d)) false)
+(test "not is_list" (is_list (table 'a 'b 'c 'd)) false)
 (test "not is_number" (is_number "123") false)
 
 ; tokenize tests
@@ -293,6 +436,7 @@
 (test "tokanize 4" (tokenize "'abc") (list "'" "abc"))
 (test "tokanize 5" (tokenize " \"hello world\" ") (list "\"hello world\""))
 (test "tokanize 6" (tokenize " ; foo bar \n \"hello world\" ") (list "\"hello world\""))
+(test "tokanize 7" (tokenize " \"hello \\\"world\" ") (list "\"hello \\\"world\""))
 
 ; tokenize errors
 (test_err "unclosed string"
@@ -307,11 +451,15 @@
 (test "parse 5" (parse (tokenize "((()))")) (list (list (list (list)))))
 ;(test "parse 6" (parse (tokenize "'(a)")) (list (list "\'" "a")))
 ;(test "parse 7" (parse (tokenize "'a")) (list (list "\'" (list "a"))))
-
+(test "parse 8" (parse (tokenize "()()()")) (list (list) (list) (list)))
+(test "parse 9" (parse (tokenize 
+  "(a (b 1) 2)"))
+  (list (list 'a (list 'b 1) 2)))
+  
 ; perens tests
 (test_err "unbalanced perens"
   (fn () (parse (tokenize "(")))
-  "unbalanced perens")
+  "unbalanced perens, not enough )")
 
 ; compile tests
 (test "compile basic" (compile (parse (tokenize 
@@ -353,6 +501,20 @@
   "(a>b>c);\n") 
       
 ; special forms 
+; def 
+(test "def1" (compile (parse (tokenize 
+  "(def a 1 )"))) 
+  "var a;\n(a=1);\n") 
+(test "def2" (compile (parse (tokenize 
+  "(def a (b(c d)))"))) 
+  "var a;\n(a=b(c(d)));\n")   
+(test "def3" (compile (parse (tokenize 
+  "(def (a b c) b c)"))) 
+  "var a;\n(a=(function(b,c){\nb;\nreturn c;\n}));\n") 
+(test "def4" (compile (parse (tokenize 
+  "(def (a) (def c 0))"))) 
+  "var a;\n(a=(function(){\nvar c;\nreturn (c=0);\n}));\n") 
+    
 ; if
 (test "if1" (compile (parse (tokenize 
   "(if a b c)"))) 
@@ -363,24 +525,37 @@
 (test "if3" (compile (parse (tokenize 
   "(if a b c d e f)"))) 
   "a?b:c?d:e?f:null;\n") 
+(test "if4" (compile (parse (tokenize 
+  "(if (> 1 2) a)"))) 
+  "(1>2)?a:null;\n") 
   
 ; fn
 (test "fn1" (compile (parse (tokenize 
   "(fn (a) b c)"))) 
-  "(function(a){\nb;\nc;\n});\n") 
+  "(function(a){\nb;\nreturn c;\n});\n") 
 (test "fn2" (compile (parse (tokenize 
   "(fn (a b c) b c)"))) 
-  "(function(a,b,c){\nb;\nc;\n});\n") 
+  "(function(a,b,c){\nb;\nreturn c;\n});\n") 
 (test "fn3" (compile (parse (tokenize 
   "(fn (a b c) (b c))"))) 
-  "(function(a,b,c){\nb(c);\n});\n") 
+  "(function(a,b,c){\nreturn b(c);\n});\n") 
 (test "fn4" (compile (parse (tokenize 
   "(fn () (b c))"))) 
-  "(function(){\nb(c);\n});\n") 
+  "(function(){\nreturn b(c);\n});\n") 
 (test "fn5" (compile (parse (tokenize 
   "(fn ())"))) 
   "(function(){\n});\n") 
   
+; do  
+(test "do1" (compile (parse (tokenize 
+  "(do a b c d e f)"))) 
+  "(function(){\na;\nb;\nc;\nd;\ne;\nreturn f;\n}());\n")   
+
+; while  
+(test "while1" (compile (parse (tokenize 
+  "(while a b c d e f)"))) 
+  "(function(){while(a){\nb;\nc;\nd;\ne;\nf;\n}}());\n")   
+    
 ; quote
 (test "quote1" (compile (parse (tokenize 
   "'a"))) 
@@ -402,4 +577,12 @@
 (test "js2" (compile (parse (tokenize 
   "(js \"/* (comment) */\")"))) 
   "/* (comment) */;\n")
+  
+  
+
+(def ts (fs.readFileSync "treescript.tree" "utf8"))
+; (console.log (tokenize ts))
+; (console.log (parse (tokenize ts)))
+(fs.writeFileSync "test2.js" (compile (parse (tokenize ts))))
+
    
