@@ -1,4 +1,4 @@
-(def VERSION .002)
+(def VERSION .003)
 
 (def fs (require "fs"))
 
@@ -400,6 +400,11 @@
   ; write out the final buffer
   (buffer.join ""))
 
+(def (compile_file filename)
+  (def source (fs.readFileSync filename "utf8"))
+  (def code (compile (parse (tokenize source))))
+  (fs.writeFileSync (+ filename ".js") code))
+
 (def (run filename)
   (console.log "running" filename)
   (def source (fs.readFileSync filename "utf8"))
@@ -416,7 +421,10 @@
   (next))
 
 (def filename (get (process.argv.splice 2 1) 0))
-(if filename
+(if 
+  (= filename "-c")
+  (compile_file (get process.argv 2))
+  (filename)
   (run filename)
   (repl))
   
