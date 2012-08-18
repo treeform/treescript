@@ -3,7 +3,7 @@
 ; you still use same functions
 (console.log "world")
 ; or you can call the function first
-(.log console "hello")
+;(.log console "hello")
 
 
 ; if statements are arc style
@@ -24,9 +24,9 @@
 (: a 3)
 
 ; lets creates new lexical binding simmilar to functions
-(let (a 3 b 4 c 5)
-  (console.log "new scope")
-  (console.log a b c))
+;(let (a 3 b 4 c 5)
+;  (console.log "new scope")
+;  (console.log a b c))
 
 ; to create a list simply
 '(1 2 3 4)
@@ -35,15 +35,15 @@
 '(a: 1 b: 2 c: 3)
 
 ; there is map and each to zip through the list and table
-(map (fn (n) (+ n 1))
-     '(1 2 3 4))
+;(map (fn (n) (+ n 1))
+;     '(1 2 3 4))
 
-(each (fn (k v) (+ k v))
-      '(a: 1 b: 2 c: 3 d: 4))
+;(each (fn (k v) (+ k v))
+;      '(a: 1 b: 2 c: 3 d: 4))
 
 ; you can mix tables and list when you call functions who's
 ; list paramters like a table
-($.ajax url type: "POST" data: '(1 2 3))
+;($.ajax url type: "POST" data: '(1 2 3))
 ; to create this:
 ; $.ajax(url,{"type":"POST","data":[1,2,3]});
 

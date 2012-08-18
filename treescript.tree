@@ -400,14 +400,24 @@
   ; write out the final buffer
   (buffer.join ""))
 
-(def filename (get process.argv 2))
-(console.log filename)
-(def source (fs.readFileSync filename "utf8"))
-(def code (compile (parse (tokenize source))))
-; (filename.replace ".tree" ".js")
-; fs.writeFileSync
+(def (run filename)
+  (console.log "running" filename)
+  (def source (fs.readFileSync filename "utf8"))
+  (def code (compile (parse (tokenize source))))
+  (eval code))
+  
+(def (repl)
+  (def readline (require "readline"))
+  (def rl (readline.createInterface process.stdin process.stdout))
+  (def (next)  
+    (rl.question ">" (fn (line)
+      (console.log (eval (compile (parse (tokenize line)))))
+      (next))))
+  (next))
 
-; (def vm (require "vm"))
-(eval code)
-
+(def filename (get (process.argv.splice 2 1) 0))
+(if filename
+  (run filename)
+  (repl))
+  
    
